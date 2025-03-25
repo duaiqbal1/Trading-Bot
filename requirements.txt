@@ -1,0 +1,6 @@
+flask
+MetaTrader5
+yfinance
+scikit-learn
+pandas
+numpy

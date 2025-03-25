@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trading Bot Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@1.2.1/dist/chartjs-plugin-zoom.min.js"></script>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script> <!-- Updated to a more recent version -->
+    <!-- Add Toastify for notifications -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/toastify-js/src/toastify.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/toastify-js"></script>
+    <style>
+        /* Spinner styles */
+        .spinner {
+            display: none;
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            border-left: 4px solid #ffffff;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+            margin-left: 10px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        /* Dark mode styles */
+        .dark-mode {
+            background-color: #1a202c;
+            color: #e2e8f0;
+        }
+        .dark-mode .bg-white {
+            background-color: #2d3748;
+        }
+        .dark-mode .text-gray-700 {
+            color: #e2e8f0;
+        }
+        .dark-mode .bg-gray-200 {
+            background-color: #4a5568;
+        }
+        .dark-mode .text-gray-600 {
+            color: #a0aec0;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen transition-colors duration-300">
+    <nav class="bg-blue-600 text-white p-4 flex justify-between items-center">
+        <div class="flex items-center">
+            <img src="https://img.icons8.com/ios-filled/50/ffffff/robot.png" alt="Bot Icon" class="w-8 h-8 mr-2">
+            <h1 class="text-xl font-bold">Trading Bot Dashboard</h1>
+        </div>
+        <div class="flex items-center gap-4">
+            <a href="{{ url_for('change_password') }}" class="bg-yellow-500 hover:bg-yellow-600 px-3 py-1 rounded">Change Password</a>
+            <button id="theme-toggle" class="bg-gray-200 text-gray-700 px-3 py-1 rounded hover:bg-gray-300">Toggle Dark Mode</button>
+            <a href="{{ url_for('logout') }}" class="bg-red-500 hover:bg-red-600 px-4 py-2 rounded">Logout</a>
+        </div>
+    </nav>
+
+    <div class="container mx-auto p-6">
+        <!-- Stats Section -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
+            <div class="bg-white p-6 rounded-lg shadow-lg text-center">
+                <h3 class="text-lg font-semibold text-gray-700">Account Balance</h3>
+                <p id="account-balance" class="text-2xl font-bold text-green-600">{{ account.balance }}</p>
+            </div>
+            <div class="bg-white p-6 rounded-lg shadow-lg text-center">
+                <h3 class="text-lg font-semibold text-gray-700">Open Trades</h3>
+                <p id="open-trades" class="text-2xl font-bold text-blue-600">{{ account.open_trades }}</p>
+            </div>
+            <div class="bg-white p-6 rounded-lg shadow-lg text-center">
+                <h3 class="text-lg font-semibold text-gray-700">Latest Signal</h3>
+                <p class="text-2xl font-bold text-yellow-600">{{ account.latest_signal }}</p>
+            </div>
+            <div class="bg-white p-6 rounded-lg shadow-lg text-center">
+                <h3 class="text-lg font-semibold text-gray-700">Total Profit</h3>
+                <p id="total-profit" class="text-2xl font-bold text-red-600">{{ account.profit }}</p>
+            </div>
+            <div class="bg-white p-6 rounded-lg shadow-lg text-center">
+                <h3 class="text-lg font-semibold text-gray-700">Current EURUSD Price</h3>
+                <p id="current-price" class="text-2xl font-bold text-purple-600">{{ account.current_price }}</p>
+            </div>
+            <div class="bg-white p-6 rounded-lg shadow-lg text-center">
+                <h3 class="text-lg font-semibold text-gray-700">Daily High</h3>
+                <p id="daily-high" class="text-2xl font-bold text-purple-600">{{ account.daily_high }}</p>
+            </div>
+            <div class="bg-white p-6 rounded-lg shadow-lg text-center">
+                <h3 class="text-lg font-semibold text-gray-700">Daily Low</h3>
+                <p id="daily-low" class="text-2xl font-bold text-purple-600">{{ account.daily_low }}</p>
+            </div>
+            <div class="bg-white p-6 rounded-lg shadow-lg text-center">
+                <h3 class="text-lg font-semibold text-gray-700">Bot Status</h3>
+                <p id="bot-status" class="text-2xl font-bold text-teal-600">{{ account.bot_status }}</p>
+            </div>
+        </div>
+
+        <!-- Charts Section -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+            <div class="bg-white p-6 rounded-lg shadow-lg">
+                <h3 class="text-lg font-semibold text-gray-700 mb-4">Profit Over Time</h3>
+                <canvas id="profitChart"></canvas>
+            </div>
+            <div class="bg-white p-6 rounded-lg shadow-lg">
+                <h3 class="text-lg font-semibold text-gray-700 mb-4">Balance Over Time</h3>
+                <canvas id="balanceChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Parameter Adjustment Section -->
+        <div class="bg-white p-6 rounded-lg shadow-lg mb-6">
+            <h3 class="text-lg font-semibold text-gray-700 mb-4">Adjust Bot Parameters</h3>
+            <form id="parameter-form" method="POST" action="{{ url_for('update_parameters') }}" class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                    <label class="block text-gray-700 mb-2" for="lot_size">Lot Size</label>
+                    <input type="number" step="0.01" name="lot_size" id="lot_size" value="{{ account.parameters.lot_size }}" class="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" required>
+                </div>
+                <div>
+                    <label class="block text-gray-700 mb-2" for="stop_loss">Stop Loss (Pips)</label>
+                    <input type="number" name="stop_loss" id="stop_loss" value="{{ account.parameters.stop_loss }}" class="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" required>
+                </div>
+                <div>
+                    <label class="block text-gray-700 mb-2" for="take_profit">Take Profit (Pips)</label>
+                    <input type="number" name="take_profit" id="take_profit" value="{{ account.parameters.take_profit }}" class="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" required>
+                </div>
+                <div class="md:col-span-3">
+                    <button type="submit" class="bg-blue-500 text-white p-3 rounded-lg hover:bg-blue-600 w-full">Update Parameters</button>
+                </div>
+            </form>
+        </div>
+
+        <!-- Historical Trades Section -->
+        <div class="bg-white p-6 rounded-lg shadow-lg mb-6">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-semibold text-gray-700">Historical Trades</h3>
+                <div class="flex gap-2">
+                    <button onclick="refreshTrades()" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">Refresh Trades</button>
+                    <a href="{{ url_for('export_trades') }}" class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600">Export as CSV</a>
+                </div>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left" id="trades-table">
+                    <thead>
+                        <tr class="bg-gray-200">
+                            <th class="p-3">Time</th>
+                            <th class="p-3">Type</th>
+                            <th class="p-3">Volume</th>
+                            <th class="p-3">Profit</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for trade in trades %}
+                        <tr>
+                            <td class="p-3">{{ trade.time }}</td>
+                            <td class="p-3">{{ trade.type }}</td>
+                            <td class="p-3">{{ trade.volume }}</td>
+                            <td class="p-3">{{ trade.profit }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Bot Control Section -->
+        <div class="bg-white p-6 rounded-lg shadow-lg">
+            <h3 class="text-lg font-semibold text-gray-700 mb-4">Bot Control</h3>
+            <div class="flex gap-4">
+                <div class="relative">
+                    <button onclick="startBot()" class="bg-green-500 text-white p-3 rounded-lg hover:bg-green-600 flex items-center">
+                        Start Bot
+                        <span id="start-spinner" class="spinner"></span>
+                    </button>
+                </div>
+                <div class="relative">
+                    <button onclick="stopBot()" class="bg-red-500 text-white p-3 rounded-lg hover:bg-red-600 flex items-center">
+                        Stop Bot
+                        <span id="stop-spinner" class="spinner"></span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <p class="text-center text-gray-600 mt-6" id="last-updated">Trading Bot v1.0 | Last Updated: <span id="timestamp">23/03/2025, 8:33:31 pm</span></p>
+    </div>
+
+    <script>
+        // Pass initial chart data as JSON from Flask
+        let profitData = JSON.parse('{{ profit_data_json | safe }}');
+        let balanceData = JSON.parse('{{ balance_data_json | safe }}');
+
+        // Initialize SocketIO
+        const socket = io();
+
+        // Debug SocketIO connection
+        socket.on('connect', () => {
+            console.log('Connected to SocketIO server');
+        });
+        socket.on('disconnect', () => {
+            console.log('Disconnected from SocketIO server');
+        });
+
+        // Initialize charts
+        const profitLabels = profitData.map(data => data.time);
+        const profitValues = profitData.map(data => data.profit);
+        const balanceLabels = balanceData.map(data => data.time);
+        const balanceValues = balanceData.map(data => data.balance);
+
+        const profitCtx = document.getElementById('profitChart').getContext('2d');
+        const profitChart = new Chart(profitCtx, {
+            type: 'line',
+            data: {
+                labels: profitLabels,
+                datasets: [{
+                    label: 'Profit Over Time',
+                    data: profitValues,
+                    borderColor: '#0288d1',
+                    fill: false
+                }]
+            },
+            options: {
+                plugins: {
+                    tooltip: {
+                        enabled: true
+                    },
+                    zoom: {
+                        zoom: {
+                            wheel: {
+                                enabled: true
+                            },
+                            pinch: {
+                                enabled: true
+                            },
+                            mode: 'xy'
+                        },
+                        pan: {
+                            enabled: true,
+                            mode: 'xy'
+                        }
+                    }
+                },
+                scales: {
+                    x: { title: { display: true, text: 'Time' } },
+                    y: { title: { display: true, text: 'Profit (USD)' } }
+                }
+            }
+        });
+
+        const balanceCtx = document.getElementById('balanceChart').getContext('2d');
+        const balanceChart = new Chart(balanceCtx, {
+            type: 'line',
+            data: {
+                labels: balanceLabels,
+                datasets: [{
+                    label: 'Balance Over Time',
+                    data: balanceValues,
+                    borderColor: '#4caf50',
+                    fill: false
+                }]
+            },
+            options: {
+                plugins: {
+                    tooltip: {
+                        enabled: true
+                    },
+                    zoom: {
+                        zoom: {
+                            wheel: {
+                                enabled: true
+                            },
+                            pinch: {
+                                enabled: true
+                            },
+                            mode: 'xy'
+                        },
+                        pan: {
+                            enabled: true,
+                            mode: 'xy'
+                        }
+                    }
+                },
+                scales: {
+                    x: { title: { display: true, text: 'Time' } },
+                    y: { title: { display: true, text: 'Balance (USD)' } }
+                }
+            }
+        });
+
+        // Update current price, daily high, daily low, account data, and charts in real-time
+        socket.on('price_update', function(data) {
+            console.log('Received price_update:', data);
+            // Update price, high, and low
+            document.getElementById('current-price').innerText = data.current_price;
+            document.getElementById('daily-high').innerText = data.daily_high;
+            document.getElementById('daily-low').innerText = data.daily_low;
+
+            // Update timestamp
+            const now = new Date();
+            document.getElementById('timestamp').innerText = now.toLocaleDateString() + ', ' + now.toLocaleTimeString();
+
+            // Fetch updated account data and trades
+            fetch('/get_account_data')
+                .then(response => response.json())
+                .then(accountData => {
+                    // Update account balance, profit, and open trades
+                    document.getElementById('account-balance').innerText = accountData.balance;
+                    document.getElementById('total-profit').innerText = accountData.profit;
+                    document.getElementById('open-trades').innerText = accountData.open_trades;
+
+                    // Update charts with new profit and balance data
+                    fetch('/get_chart_data')
+                        .then(response => response.json())
+                        .then(chartData => {
+                            profitData = chartData.profit_data;
+                            balanceData = chartData.balance_data;
+
+                            // Update profit chart
+                            profitChart.data.labels = profitData.map(data => data.time);
+                            profitChart.data.datasets[0].data = profitData.map(data => data.profit);
+                            profitChart.update();
+
+                            // Update balance chart
+                            balanceChart.data.labels = balanceData.map(data => data.time);
+                            balanceChart.data.datasets[0].data = balanceData.map(data => data.balance);
+                            balanceChart.update();
+                        })
+                        .catch(error => console.error('Error fetching chart data:', error));
+                })
+                .catch(error => console.error('Error fetching account data:', error));
+        });
+
+        // Bot control functions with spinner and notifications
+        async function startBot() {
+            const startSpinner = document.getElementById('start-spinner');
+            startSpinner.style.display = 'inline-block';
+            try {
+                const response = await fetch('/start_bot', { method: 'POST' });
+                const result = await response.json();
+                startSpinner.style.display = 'none';
+                if (response.ok) {
+                    document.getElementById('bot-status').innerText = result.bot_status;
+                    Toastify({
+                        text: result.status,
+                        duration: 3000,
+                        gravity: "top",
+                        position: "right",
+                        backgroundColor: "#10b981"
+                    }).showToast();
+                } else {
+                    Toastify({
+                        text: result.status + ': ' + result.error,
+                        duration: 3000,
+                        gravity: "top",
+                        position: "right",
+                        backgroundColor: "#ef4444"
+                    }).showToast();
+                }
+            } catch (error) {
+                startSpinner.style.display = 'none';
+                Toastify({
+                    text: 'Error starting bot: ' + error.message,
+                    duration: 3000,
+                    gravity: "top",
+                    position: "right",
+                    backgroundColor: "#ef4444"
+                }).showToast();
+            }
+        }
+
+        async function stopBot() {
+            const stopSpinner = document.getElementById('stop-spinner');
+            stopSpinner.style.display = 'inline-block';
+            try {
+                const response = await fetch('/stop_bot', { method: 'POST' });
+                const result = await response.json();
+                stopSpinner.style.display = 'none';
+                if (response.ok) {
+                    document.getElementById('bot-status').innerText = result.bot_status;
+                    Toastify({
+                        text: result.status,
+                        duration: 3000,
+                        gravity: "top",
+                        position: "right",
+                        backgroundColor: "#10b981"
+                    }).showToast();
+                } else {
+                    Toastify({
+                        text: result.status + ': ' + result.error,
+                        duration: 3000,
+                        gravity: "top",
+                        position: "right",
+                        backgroundColor: "#ef4444"
+                    }).showToast();
+                }
+            } catch (error) {
+                stopSpinner.style.display = 'none';
+                Toastify({
+                    text: 'Error stopping bot: ' + error.message,
+                    duration: 3000,
+                    gravity: "top",
+                    position: "right",
+                    backgroundColor: "#ef4444"
+                }).showToast();
+            }
+        }
+
+        // Refresh trades function
+        async function refreshTrades() {
+            try {
+                const response = await fetch('/get_trades');
+                const trades = await response.json();
+                const tbody = document.querySelector('#trades-table tbody');
+                tbody.innerHTML = '';
+                trades.forEach(trade => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td class="p-3">${trade.time}</td>
+                        <td class="p-3">${trade.type}</td>
+                        <td class="p-3">${trade.volume}</td>
+                        <td class="p-3">${trade.profit}</td>
+                    `;
+                    tbody.appendChild(row);
+                });
+                Toastify({
+                    text: "Trades refreshed successfully",
+                    duration: 3000,
+                    gravity: "top",
+                    position: "right",
+                    backgroundColor: "#10b981"
+                }).showToast();
+            } catch (error) {
+                Toastify({
+                    text: "Error refreshing trades: " + error.message,
+                    duration: 3000,
+                    gravity: "top",
+                    position: "right",
+                    backgroundColor: "#ef4444"
+                }).showToast();
+            }
+        }
+
+        // Handle parameter form submission with notification
+        document.getElementById('parameter-form').addEventListener('submit', async function(event) {
+            event.preventDefault();
+            const form = event.target;
+            try {
+                const response = await fetch(form.action, {
+                    method: form.method,
+                    body: new FormData(form)
+                });
+                if (response.ok) {
+                    Toastify({
+                        text: "Parameters updated successfully",
+                        duration: 3000,
+                        gravity: "top",
+                        position: "right",
+                        backgroundColor: "#10b981"
+                    }).showToast();
+                    // Optionally, refresh the page to show updated parameters
+                    setTimeout(() => window.location.reload(), 1000);
+                } else {
+                    Toastify({
+                        text: "Error updating parameters",
+                        duration: 3000,
+                        gravity: "top",
+                        position: "right",
+                        backgroundColor: "#ef4444"
+                    }).showToast();
+                }
+            } catch (error) {
+                Toastify({
+                    text: "Error updating parameters: " + error.message,
+                    duration: 3000,
+                    gravity: "top",
+                    position: "right",
+                    backgroundColor: "#ef4444"
+                }).showToast();
+            }
+        });
+
+        // Dark mode toggle
+        document.getElementById('theme-toggle').addEventListener('click', () => {
+            document.body.classList.toggle('dark-mode');
+            const isDark = document.body.classList.contains('dark-mode');
+            localStorage.setItem('theme', isDark ? 'dark' : 'light');
+            document.getElementById('theme-toggle').innerText = isDark ? 'Toggle Light Mode' : 'Toggle Dark Mode';
+        });
+
+        // Load theme preference
+        const savedTheme = localStorage.getItem('theme');
+        if (savedTheme === 'dark') {
+            document.body.classList.add('dark-mode');
+            document.getElementById('theme-toggle').innerText = 'Toggle Light Mode';
+        }
+    </script>
+</body>
+</html>
